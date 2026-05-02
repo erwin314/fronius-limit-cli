@@ -1,10 +1,9 @@
-use anyhow::{bail, Context, Result};
+use anyhow::{Context, Result, bail};
 use clap::Parser;
 use digest_auth::{AuthContext, HttpMethod};
 use serde_json::json;
 use std::time::Duration;
 use url::Url;
-
 
 #[derive(Parser, Debug)]
 #[command(author, version, about, long_about = None, allow_negative_numbers = true)]
@@ -30,7 +29,7 @@ fn main() -> Result<()> {
 
     let mut url = Url::parse(&args.base_url)?.join("/config/exportlimit/")?;
     url.query_pairs_mut().append_pair("method", "save");
-    
+
     // digest_auth requires the exact URI path and query sent in the HTTP request
     let target_path = format!("{}?{}", url.path(), url.query().unwrap_or(""));
 
@@ -56,26 +55,28 @@ fn main() -> Result<()> {
         }
     });
 
-    let agent = ureq::builder()
-        .timeout(Duration::from_secs(10))
-        .build();
+    let agent: ureq::Agent = ureq::Agent::config_builder()
+        .timeout_global(Some(Duration::from_secs(10)))
+        .http_status_as_error(false)
+        .build()
+        .into();
 
-    let result = agent.post(url.as_str()).send_json(&data);
+    let mut initial_response = agent
+        .post(url.as_str())
+        .send_json(&data)
+        .context("Failed to send initial request")?;
 
-    let (is_unauthorized, authenticate_header) = match &result {
-        Err(ureq::Error::Status(401, res)) => {
-            let auth_header = res.header("X-WWW-Authenticate")
-                .or_else(|| res.header("WWW-Authenticate"))
-                .map(|s| s.to_string());
-            (true, auth_header)
-        }
-        _ => (false, None),
-    };
+    if initial_response.status() == 401 {
+        let auth_header = initial_response
+            .headers()
+            .get("X-WWW-Authenticate")
+            .or_else(|| initial_response.headers().get("WWW-Authenticate"))
+            .and_then(|h| h.to_str().ok())
+            .map(|s| s.to_string());
 
-    if is_unauthorized {
-        if let Some(header_val) = authenticate_header {
-            let mut prompt = digest_auth::parse(&header_val)
-                .context("Failed to parse Digest challenge")?;
+        if let Some(header_val) = auth_header {
+            let mut prompt =
+                digest_auth::parse(&header_val).context("Failed to parse Digest challenge")?;
 
             let mut context = AuthContext::new("service", &args.password, &target_path);
             context.method = HttpMethod::POST;
@@ -84,19 +85,18 @@ fn main() -> Result<()> {
                 .respond(&context)
                 .context("Failed to generate digest response")?;
 
-            let response = agent
+            let mut response = agent
                 .post(url.as_str())
-                .set("Authorization", &answer.to_header_string())
+                .header("Authorization", &answer.to_header_string())
                 .send_json(&data)
                 .context("Failed to send authenticated request")?;
 
-            println!("{}", response.into_string()?);
+            println!("{}", response.body_mut().read_to_string()?);
         } else {
             bail!("401 Unauthorized but no (X-)WWW-Authenticate header found");
         }
     } else {
-        let response = result.context("Failed to send initial request")?;
-        println!("{}", response.into_string()?);
+        println!("{}", initial_response.body_mut().read_to_string()?);
     }
 
     Ok(())
