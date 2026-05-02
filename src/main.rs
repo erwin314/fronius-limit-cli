@@ -9,8 +9,8 @@ use url::Url;
 #[command(author, version, about, long_about = None, allow_negative_numbers = true)]
 struct Args {
     /// Base URL of the Fronius inverter (e.g., http://192.168.1.100)
-    #[arg(short, long, env = "FRONIUS_BASE_URL")]
-    base_url: String,
+    #[arg(short, long, env = "FRONIUS_BASE_URL", value_parser = clap::value_parser!(Url))]
+    base_url: Url,
 
     /// Password for the "service" user
     #[arg(short, long, env = "FRONIUS_SERVICE_PASSWORD")]
@@ -27,7 +27,7 @@ fn main() -> Result<()> {
     let args = Args::parse();
     let p = args.p;
 
-    let mut url = Url::parse(&args.base_url)?.join("/config/exportlimit/")?;
+    let mut url = args.base_url.join("/config/exportlimit/")?;
     url.query_pairs_mut().append_pair("method", "save");
 
     // digest_auth requires the exact URI path and query sent in the HTTP request
@@ -61,43 +61,60 @@ fn main() -> Result<()> {
         .build()
         .into();
 
+    // First request to obtain the digest auth challenge
     let mut initial_response = agent
         .post(url.as_str())
         .send_json(&data)
         .context("Failed to send initial request")?;
 
-    if initial_response.status() == 401 {
-        let auth_header = initial_response
-            .headers()
-            .get("X-WWW-Authenticate")
-            .or_else(|| initial_response.headers().get("WWW-Authenticate"))
-            .and_then(|h| h.to_str().ok())
-            .map(|s| s.to_string());
+    // If the response is not a 401 digest challenge, handle it directly.
+    if initial_response.status() != 401 {
+        let status = initial_response.status();
+        let body = initial_response.body_mut().read_to_string()?;
 
-        if let Some(header_val) = auth_header {
-            let mut prompt =
-                digest_auth::parse(&header_val).context("Failed to parse Digest challenge")?;
-
-            let mut context = AuthContext::new("service", &args.password, &target_path);
-            context.method = HttpMethod::POST;
-
-            let answer = prompt
-                .respond(&context)
-                .context("Failed to generate digest response")?;
-
-            let mut response = agent
-                .post(url.as_str())
-                .header("Authorization", &answer.to_header_string())
-                .send_json(&data)
-                .context("Failed to send authenticated request")?;
-
-            println!("{}", response.body_mut().read_to_string()?);
-        } else {
-            bail!("401 Unauthorized but no (X-)WWW-Authenticate header found");
+        if !status.is_success() {
+            bail!("Request failed with status {status}: {body}");
         }
-    } else {
-        println!("{}", initial_response.body_mut().read_to_string()?);
+        println!("{body}");
+        return Ok(());
     }
+
+    // Extract the digest auth challenge from the 401 response.
+    let auth_header = initial_response
+        .headers()
+        .get("X-WWW-Authenticate")
+        .or_else(|| initial_response.headers().get("WWW-Authenticate"))
+        .and_then(|h| h.to_str().ok())
+        .map(|s| s.to_owned());
+
+    let Some(header_val) = auth_header else {
+        bail!("401 Unauthorized but no (X-)WWW-Authenticate header found");
+    };
+
+    // Generate a digest response and try again.
+    let mut prompt =
+        digest_auth::parse(&header_val).context("Failed to parse Digest challenge")?;
+
+    // The Fronius API always uses the fixed username "service" for controlling PV power limits
+    let mut context = AuthContext::new("service", &args.password, &target_path);
+    context.method = HttpMethod::POST;
+
+    let answer = prompt
+        .respond(&context)
+        .context("Failed to generate digest response")?;
+
+    let mut response = agent
+        .post(url.as_str())
+        .header("Authorization", &answer.to_header_string())
+        .send_json(&data)
+        .context("Failed to send authenticated request")?;
+    let status = response.status();
+    let body = response.body_mut().read_to_string()?;
+
+    if !status.is_success() {
+        bail!("Request failed with status {status}: {body}");
+    }
+    println!("{body}");
 
     Ok(())
 }
