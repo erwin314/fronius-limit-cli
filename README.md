@@ -25,6 +25,11 @@ export FRONIUS_SERVICE_PASSWORD="YourPassword!"
 fronius-limit-cli 5000
 ```
 
+### Using a `.env` file
+
+Instead of exporting environment variables in your shell, you can create a `.env` file in the working directory. The tool will automatically load it on startup.
+You can have a look at [.env.example](.env.example) for an example of what the contents should look like.
+
 ### Unset a limit
 
 To disable the export limit entirely and allow maximum feed-in, provide a negative value such as `-1`:
