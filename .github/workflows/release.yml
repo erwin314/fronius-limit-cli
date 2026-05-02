@@ -89,7 +89,7 @@ jobs:
 
       - name: Rename artifact (Windows)
         if: runner.os == 'Windows'
-        run: ren target\${{ matrix.target }}\release\${{ matrix.artifact_name }} ${{ matrix.asset_name }}
+        run: move target\${{ matrix.target }}\release\${{ matrix.artifact_name }} ${{ matrix.asset_name }}
         shell: cmd
 
       - name: Upload artifact
