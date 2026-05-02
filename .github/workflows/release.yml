@@ -43,7 +43,7 @@ jobs:
             use_cross: false
           - os: windows-latest
             target: x86_64-pc-windows-msvc
-            artifact_name: fronius-limit-cli.exe
+            artifact_name: fronius-limit-cli
             asset_name: fronius-limit-cli-windows-amd64.exe
             use_cross: false
           - os: ubuntu-latest
@@ -58,7 +58,7 @@ jobs:
             use_cross: true
           - os: windows-latest
             target: aarch64-pc-windows-msvc
-            artifact_name: fronius-limit-cli.exe
+            artifact_name: fronius-limit-cli
             asset_name: fronius-limit-cli-windows-arm64.exe
             use_cross: false
 
