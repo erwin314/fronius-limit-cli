@@ -295,7 +295,7 @@ dependencies = [
 
 [[package]]
 name = "fronius-limit-cli"
-version = "0.2.5"
+version = "0.3.0"
 dependencies = [
  "anyhow",
  "clap",
