@@ -20,6 +20,9 @@ struct Args {
     p: i32,
 }
 
+// The Fronius API always uses the fixed username "service" for controlling PV power limits
+const FRONIUS_SERVICE_USER: &str = "service";
+
 fn main() -> Result<()> {
     // Attempt to load environment variables from a .env file (ignoring errors if not found)
     dotenvy::dotenv().ok();
@@ -72,14 +75,7 @@ fn set_export_limit(base_url: &Url, password: &str, p: i32) -> Result<()> {
 
     // If the response is not a 401 digest challenge, handle it directly.
     if initial_response.status() != 401 {
-        let status = initial_response.status();
-        let body = initial_response.body_mut().read_to_string()?;
-
-        if !status.is_success() {
-            bail!("Request failed with status {status}: {body}");
-        }
-        println!("{body}");
-        return Ok(());
+        return handle_response(initial_response);
     }
 
     // Extract the digest auth challenge from the 401 response.
@@ -88,33 +84,50 @@ fn set_export_limit(base_url: &Url, password: &str, p: i32) -> Result<()> {
         .get("X-WWW-Authenticate")
         .or_else(|| initial_response.headers().get("WWW-Authenticate"))
         .and_then(|h| h.to_str().ok())
-        .map(std::borrow::ToOwned::to_owned)
         .context("401 Unauthorized but no (X-)WWW-Authenticate header found")?;
 
-    // Generate a digest response and try again.
-    let mut prompt =
-        digest_auth::parse(&header_val).context("Failed to parse Digest challenge")?;
+    // Parse the digest auth challenge we received from the Fronius inverter.
+    let mut prompt = digest_auth::parse(header_val).context("Failed to parse Digest challenge")?;
 
-    // The Fronius API always uses the fixed username "service" for controlling PV power limits
-    let mut context = AuthContext::new("service", password, target_path);
+    // Drain response body so the connection can be reused.
+    let _ = initial_response.body_mut().read_to_string();
+    drop(initial_response);
+
+    // Generate a digest response so we can try again.
+    let mut context = AuthContext::new(FRONIUS_SERVICE_USER, password, target_path);
     context.method = HttpMethod::POST;
-
     let answer = prompt
         .respond(&context)
         .context("Failed to generate digest response")?;
 
-    let mut response = agent
+    let response = agent
         .post(url.as_str())
         .header("Authorization", &answer.to_header_string())
         .send_json(&data)
         .context("Failed to send authenticated request")?;
+    handle_response(response)
+}
+
+fn handle_response(mut response: http::Response<ureq::Body>) -> Result<()> {
     let status = response.status();
     let body = response.body_mut().read_to_string()?;
 
     if !status.is_success() {
         bail!("Request failed with status {status}: {body}");
     }
-    println!("{body}");
+    let parsed: serde_json::Value = serde_json::from_str(&body).unwrap_or_default();
+
+    // Check for Fronius API internal errors even if HTTP status is 200 OK
+    if let Some(code) = parsed["Head"]["Status"]["Code"].as_i64()
+        && code != 0
+    {
+        let reason = parsed["Head"]["Status"]["Reason"]
+            .as_str()
+            .unwrap_or("Unknown error");
+        bail!("Fronius API error (Code {code}): {reason}");
+    }
+
+    println!("Success: Export limit updated.");
 
     Ok(())
 }

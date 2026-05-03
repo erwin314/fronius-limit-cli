@@ -301,6 +301,7 @@ dependencies = [
  "clap",
  "digest_auth",
  "dotenvy",
+ "http",
  "serde_json",
  "ureq",
  "url",
