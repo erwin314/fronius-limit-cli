@@ -13,7 +13,7 @@ struct Args {
     base_url: Url,
 
     /// Password for the "service" user
-    #[arg(short, long, env = "FRONIUS_SERVICE_PASSWORD")]
+    #[arg(short, long, env = "FRONIUS_SERVICE_PASSWORD", hide_env_values = true)]
     password: String,
 
     /// Power limit in Watts (negative to turn off)
@@ -25,9 +25,11 @@ fn main() -> Result<()> {
     dotenvy::dotenv().ok();
 
     let args = Args::parse();
-    let p = args.p;
+    set_export_limit(&args.base_url, &args.password, args.p)
+}
 
-    let mut url = args.base_url.join("/config/exportlimit/")?;
+fn set_export_limit(base_url: &Url, password: &str, p: i32) -> Result<()> {
+    let mut url = base_url.join("/config/exportlimit/")?;
     url.query_pairs_mut().append_pair("method", "save");
 
     // digest_auth requires the exact URI path and query sent in the HTTP request
@@ -94,7 +96,7 @@ fn main() -> Result<()> {
         digest_auth::parse(&header_val).context("Failed to parse Digest challenge")?;
 
     // The Fronius API always uses the fixed username "service" for controlling PV power limits
-    let mut context = AuthContext::new("service", &args.password, target_path);
+    let mut context = AuthContext::new("service", password, target_path);
     context.method = HttpMethod::POST;
 
     let answer = prompt
