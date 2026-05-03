@@ -8,7 +8,7 @@ use url::Url;
 #[derive(Parser, Debug)]
 #[command(author, version, about, long_about = None, allow_negative_numbers = true)]
 struct Args {
-    /// Base URL of the Fronius inverter (e.g., http://192.168.1.100)
+    /// Base URL of the Fronius inverter (e.g., <http://192.168.1.100>)
     #[arg(short, long, env = "FRONIUS_BASE_URL", value_parser = clap::value_parser!(Url))]
     base_url: Url,
 
@@ -31,7 +31,8 @@ fn main() -> Result<()> {
     url.query_pairs_mut().append_pair("method", "save");
 
     // digest_auth requires the exact URI path and query sent in the HTTP request
-    let target_path = format!("{}?{}", url.path(), url.query().unwrap_or(""));
+    // but without the schema, host, port, and fragment.
+    let target_path = &url[url::Position::BeforePath..url::Position::AfterQuery];
 
     let data = json!({
         "powerLimits": {
@@ -80,23 +81,20 @@ fn main() -> Result<()> {
     }
 
     // Extract the digest auth challenge from the 401 response.
-    let auth_header = initial_response
+    let header_val = initial_response
         .headers()
         .get("X-WWW-Authenticate")
         .or_else(|| initial_response.headers().get("WWW-Authenticate"))
         .and_then(|h| h.to_str().ok())
-        .map(|s| s.to_owned());
-
-    let Some(header_val) = auth_header else {
-        bail!("401 Unauthorized but no (X-)WWW-Authenticate header found");
-    };
+        .map(std::borrow::ToOwned::to_owned)
+        .context("401 Unauthorized but no (X-)WWW-Authenticate header found")?;
 
     // Generate a digest response and try again.
     let mut prompt =
         digest_auth::parse(&header_val).context("Failed to parse Digest challenge")?;
 
     // The Fronius API always uses the fixed username "service" for controlling PV power limits
-    let mut context = AuthContext::new("service", &args.password, &target_path);
+    let mut context = AuthContext::new("service", &args.password, target_path);
     context.method = HttpMethod::POST;
 
     let answer = prompt
