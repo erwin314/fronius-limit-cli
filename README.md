@@ -40,6 +40,23 @@ To disable the export limit entirely and allow maximum feed-in, provide a negati
 fronius-limit-cli --base-url http://192.168.1.100 --password YourPassword! -1
 ```
 
+## Inverter Configuration
+
+For this tool to work correctly, you must configure the controlling priorities in your Fronius inverter's web interface. This tool interacts with the **Dynamic power reduction** setting.
+
+To configure this, navigate to your inverter's web interface -> **DNO** settings -> **Controlling Priorities**.
+
+### Example: Victron Dynamic ESS Integration
+
+If you are using this tool alongside a Victron energy system with Dynamic ESS, you can set the priorities to allow this CLI tool to override the Victron system when necessary.
+
+Configure the priorities from highest (1) to lowest (3):
+1. **Dynamic power reduction** (Used by this CLI tool)
+2. **Controlling via Modbus** (Used by Victron Dynamic ESS)
+3. **IO control**
+
+With this configuration, the CLI tool has the highest priority. When a limit is set via the CLI, it will actively override the limit set by the Victron system via Modbus. When the CLI limit is unset (e.g. by providing a negative value), control gracefully falls back to Victron.
+
 ## Downloads & Distribution Binaries
 
 Pre-compiled binaries are built automatically and available for download in the **Releases** section. Download the appropriate binary for your system:
