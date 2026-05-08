@@ -44,7 +44,7 @@ fronius-limit-cli --base-url http://192.168.1.100 --password YourPassword! -1
 
 For this tool to work correctly, you must configure the controlling priorities in your Fronius inverter's web interface. This tool interacts with the **Dynamic power reduction** setting.
 
-To configure this, navigate to your inverter's web interface -> **DNO** settings -> **Controlling Priorities**.
+To configure this, navigate to your inverter's web interface and login with the **service** user. Go to **Settings** -> **DNO** settings -> **Controlling Priorities**.
 
 ### Example: Victron Dynamic ESS Integration
 
