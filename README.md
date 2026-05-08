@@ -73,6 +73,15 @@ Pre-compiled binaries are built automatically and available for download in the 
 | `fronius-limit-cli-windows-amd64.exe` | Windows x86_64 | Standard Windows PCs and laptops. |
 | `fronius-limit-cli-windows-arm64.exe`| Windows ARM64 | Modern Windows on ARM devices (e.g., new Snapdragon X laptops, Surface Pro X). |
 
+### Quick Install for Victron CerboGX
+
+If you are running a Victron CerboGX (or Venus OS), you can download the latest compatible binary directly to your device using this permanent link:
+
+```bash
+wget https://github.com/erwin314/fronius-limit-cli/releases/latest/download/fronius-limit-cli-linux-musl-armv7 -O fronius-limit-cli
+chmod +x fronius-limit-cli
+```
+
 ## Releasing a new version
 This project is configured to work with `cargo-release` to bump versions, tag, and publish to GitHub. 
 
