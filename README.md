@@ -2,6 +2,8 @@
 
 A fast, standalone command-line tool written in Rust to quickly set or disable the power export limit on your Fronius solar inverter.
 
+> **Disclaimer:** This tool is an independent, unofficial community project and is not written, maintained, or endorsed by Fronius. We are not affiliated with Fronius.
+
 ## Usage
 
 The tool allows you to specify a new power limit in Watts, or unset the limit entirely by providing a negative value (e.g. `-1`).
