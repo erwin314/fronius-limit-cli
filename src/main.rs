@@ -1,3 +1,5 @@
+//! CLI tool to set power export limits on Fronius inverters
+
 use anyhow::{Context, Result, bail};
 use clap::Parser;
 use digest_auth::{AuthContext, HttpMethod};
@@ -71,7 +73,7 @@ fn set_export_limit(base_url: &Url, password: &str, p: i32) -> Result<()> {
     let mut initial_response = agent
         .post(url.as_str())
         .send_json(&data)
-        .context("Failed to send initial request")?;
+        .context("failed to send initial request")?;
 
     // If the response is not a 401 digest challenge, handle it directly.
     if initial_response.status() != 401 {
@@ -84,13 +86,16 @@ fn set_export_limit(base_url: &Url, password: &str, p: i32) -> Result<()> {
         .get("X-WWW-Authenticate")
         .or_else(|| initial_response.headers().get("WWW-Authenticate"))
         .and_then(|h| h.to_str().ok())
-        .context("401 Unauthorized but no (X-)WWW-Authenticate header found")?;
+        .context("401 unauthorized but no (X-)WWW-Authenticate header found")?;
 
     // Parse the digest auth challenge we received from the Fronius inverter.
-    let mut prompt = digest_auth::parse(header_val).context("Failed to parse Digest challenge")?;
+    let mut prompt = digest_auth::parse(header_val).context("failed to parse Digest challenge")?;
 
-    // Drain response body so the connection can be reused.
-    let _ = initial_response.body_mut().read_to_string();
+    // Drain response body so the connection can be reused without allocating.
+    let _ = std::io::copy(
+        &mut initial_response.body_mut().as_reader(),
+        &mut std::io::sink(),
+    );
     drop(initial_response);
 
     // Generate a digest response so we can try again.
@@ -98,13 +103,13 @@ fn set_export_limit(base_url: &Url, password: &str, p: i32) -> Result<()> {
     context.method = HttpMethod::POST;
     let answer = prompt
         .respond(&context)
-        .context("Failed to generate digest response")?;
+        .context("failed to generate digest response")?;
 
     let response = agent
         .post(url.as_str())
         .header("Authorization", &answer.to_header_string())
         .send_json(&data)
-        .context("Failed to send authenticated request")?;
+        .context("failed to send authenticated request")?;
     handle_response(response)
 }
 
@@ -115,7 +120,8 @@ fn handle_response(mut response: http::Response<ureq::Body>) -> Result<()> {
     if !status.is_success() {
         bail!("Request failed with status {status}: {body}");
     }
-    let parsed: serde_json::Value = serde_json::from_str(&body).unwrap_or_default();
+    let parsed: serde_json::Value =
+        serde_json::from_str(&body).context("failed to parse JSON response from Fronius API")?;
 
     // Check for Fronius API internal errors even if HTTP status is 200 OK
     if let Some(code) = parsed["Head"]["Status"]["Code"].as_i64()
